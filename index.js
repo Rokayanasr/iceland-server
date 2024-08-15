@@ -53,7 +53,7 @@ app.post("/send-email", uploads.single("image"), async (req, res) => {
 
         const mailOption = {
             from: email,
-            to: "rokanasr60@gmail.com",
+            to: "maramiceland2023@gmail.com",
             subject: serviceName,
             html: html,
             attachments: [
