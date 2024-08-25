@@ -17,7 +17,10 @@ app.use(express.urlencoded({ extended: true }));
 // تكوين multer لتخزين الملفات في الذاكرة
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-
+app.get("/", async(req,res) => {
+    res.json("hello from server")
+    console.log('hello from server');
+})
 app.post("/send-email", upload.single('image'), async (req, res) => {
     try {
         const { firstName, lastName, serviceName, phone, email } = req.body;
