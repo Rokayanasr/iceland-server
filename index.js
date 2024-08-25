@@ -73,7 +73,8 @@ app.post("/send-email", upload.single('image'), async (req, res) => {
                     auth: {
                         user: process.env.GMAIL_USER,
                         pass: process.env.GMAIL_PASS
-                    }
+                    },
+                    secure: false
                 });
 
                 const mailOptions = {
