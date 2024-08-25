@@ -3,74 +3,99 @@ const express = require("express");
 const path = require("path");
 const app = express();
 require("dotenv").config();
-const multer = require("multer");
+const cloudinary = require('./cloudinary/cloudinary');
 const cors = require("cors");
+const multer = require("multer");
+const sharp = require("sharp");
+
 // middlewares
 app.use(cors());
-app.use(express.static("puplic"));
+app.use(express.static("public"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(path.join(__dirname + "public")));
 
-// multer configuration
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "./public");
-    },
-    filename: function (req, file, cb) {
-        const fileName = `${Date.now()}_${file.originalname}`;
-        req.savedFileName = fileName;
-        cb(null, fileName);
-    },
-});
-const uploads = multer({ storage });
+// تكوين multer لتخزين الملفات في الذاكرة
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-app.post("/send-email", uploads.single("image"), async (req, res) => {
-    const imageUrl = req.savedFileName;
-    if (!imageUrl) {
-        throw new Error("Image not uploaded correctly.");
-    }
-    const { firstName, lastName, serviceName, phone, email } = req.body;
-    const html = `
-    <h2>الاسم: ${firstName} ${lastName} </h2>
-    <h4>الخدمة:  ${serviceName}</h4>
-    <h4>رقم الهاتف:  ${phone}</h4>
-    <img src="cid:${imageUrl}" width="400"/>
-    `;
-
+app.post("/send-email", upload.single('image'), async (req, res) => {
     try {
-        const transporter = nodeMailer.createTransport({
-            host: "smtp.gmail.com",
-            port: 465,
-            // secure: true,
-            service: "gmail",
-            auth: {
-                user: process.env.GMAIL_USER,
-                pass: process.env.GMAIL_PASS,
-            },
-            secureConnection: false,
-        });
+        const { firstName, lastName, serviceName, phone, email } = req.body;
 
-        const mailOption = {
-            from: email,
-            to: "maramiceland2023@gmail.com",
-            subject: serviceName,
-            html: html,
-            attachments: [
-                {
-                    filename: imageUrl,
-                    path: path.join(__dirname, "public", imageUrl),
-                    cid: imageUrl,
-                },
-            ],
-        };
+        // التحقق من وجود جميع الحقول
+        const missingFields = [];
+        if (!firstName) missingFields.push('الاسم الأول');
+        if (!lastName) missingFields.push('الاسم الأخير');
+        if (!serviceName) missingFields.push('اسم الخدمة');
+        if (!phone) missingFields.push('رقم الهاتف');
+        if (!email) missingFields.push('البريد الإلكتروني');
 
-        const info = await transporter.sendMail(mailOption);
-        console.log("Email has been sent successfully" + info.messageId);
-        res.send("Email has been sent successfully");
+        if (missingFields.length > 0) {
+            return res.status(400).send(`الحقول التالية مفقودة: ${missingFields.join(', ')}`);
+        }
+
+        // التحقق من وجود صورة في الطلب
+        if (!req.file) {
+            return res.status(400).send('لم يتم رفع أي صورة.');
+        }
+
+        // ضغط الصورة باستخدام sharp
+        const compressedImageBuffer = await sharp(req.file.buffer)
+            .resize({ width: 800 }) // تغيير حجم الصورة إذا لزم الأمر
+            .jpeg({ quality: 80 }) // ضغط الصورة بنسبة جودة 80
+            .toBuffer();
+
+        // رفع الصورة إلى Cloudinary
+        const result = await cloudinary.uploader.upload_stream({
+            resource_type: 'image',
+            folder: 'images', // يمكنك تحديد مجلد لتخزين الصور
+        }, (error, result) => {
+            if (error) {
+                console.log("Error uploading image to Cloudinary: ", error);
+                res.status(500).send("Error uploading image to Cloudinary.");
+            } else {
+                const imageUrl = result.secure_url;
+
+                // إعداد بريد إلكتروني
+                const html = `
+                    <h2>الاسم: ${firstName} ${lastName}</h2>
+                    <h4>الخدمة: ${serviceName}</h4>
+                    <h4>رقم الهاتف: ${phone}</h4>
+                    <img src="${imageUrl}" width="400"/>
+                `;
+
+                // إعداد Nodemailer
+                const transporter = nodeMailer.createTransport({
+                    service: 'gmail',
+                    auth: {
+                        user: process.env.GMAIL_USER,
+                        pass: process.env.GMAIL_PASS
+                    }
+                });
+
+                const mailOptions = {
+                    from: email,
+                    to: 'rokanasr60@gmail.com',
+                    subject: `طلب خدمة: ${serviceName}`,
+                    html: html
+                };
+
+                // إرسال البريد الإلكتروني
+                transporter.sendMail(mailOptions, (error, info) => {
+                    if (error) {
+                        console.log("Email could not be sent due to error: " + error);
+                        res.status(500).send("Email could not be sent due to error: " + error);
+                    } else {
+                        console.log("Email has been sent successfully: " + info.messageId);
+                        res.status(200).send("Email has been sent successfully");
+                    }
+                });
+            }
+        }).end(compressedImageBuffer); // نرسل الصورة المضغوطة إلى Cloudinary
+
     } catch (err) {
-        console.log("Email could not be sent due to error: " + err);
-        res.send("Email could not be sent due to error: " + err);
+        console.error("تعذر إرسال البريد الإلكتروني بسبب الخطأ: " + err);
+        res.status(500).send("تعذر إرسال البريد الإلكتروني بسبب الخطأ: " + err);
     }
 });
 
