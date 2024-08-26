@@ -79,7 +79,7 @@ app.post("/send-email", upload.single('image'), async (req, res) => {
 
                 const mailOptions = {
                     from: email,
-                    to: 'rokanasr60@gmail.com',
+                    to: 'maramiceland2023@gmail.com',
                     subject: `طلب خدمة: ${serviceName}`,
                     html: html
                 };
